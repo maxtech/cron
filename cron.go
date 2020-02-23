@@ -1,11 +1,13 @@
 package cron
 
 import (
+    "errors"
     "fmt"
     uuid "github.com/satori/go.uuid"
     "io"
     "os"
     "os/signal"
+    "runtime"
     "runtime/debug"
     "sync"
     "syscall"
@@ -14,6 +16,8 @@ import (
 
 type entry struct {
     id         string
+    checkDay   int
+    oneDayLoop bool
     checkPoint time.Time
     duration   time.Duration
     entryFunc  func()
@@ -22,6 +26,16 @@ type entry struct {
 
 func (e *entry) ableRun() bool {
     nowTime := time.Now()
+    if e.checkDay > 0 && nowTime.Day() == e.checkDay {
+        if e.oneDayLoop {
+            return nowTime.After(e.checkPoint.Add(e.duration))
+        } else {
+            targetTime := time.Date(nowTime.Year(), nowTime.Month(), nowTime.Day(), 0, 0, 0, 0, nowTime.Location())
+            targetTime = targetTime.Add(e.duration)
+            return  nowTime.After(targetTime) && e.checkPoint.Year() != targetTime.Year() && e.checkPoint.Month() != targetTime.Month()
+        }
+
+    }
     return nowTime.After(e.checkPoint.Add(e.duration))
 }
 
@@ -52,7 +66,7 @@ func NewWithWriter(writer io.Writer) *Cron {
     }
 }
 
-func (c *Cron) AddFunc(duration time.Duration, cmd func()) {
+func (c *Cron) AddDurationFunc(duration time.Duration, cmd func()) {
     entry := &entry{
         id:         uuid.NewV4().String(),
         checkPoint: time.Now(),
@@ -60,7 +74,26 @@ func (c *Cron) AddFunc(duration time.Duration, cmd func()) {
         entryFunc:  cmd,
     }
     c.entries = append(c.entries, entry)
+}
 
+func (c *Cron) AddDayFunc(monthDay int, oneDayLoop bool, duration time.Duration, cmd func()) error {
+    if monthDay > 31 && monthDay < 0 {
+        return errors.New("month day error: only 0 ~ 31")
+    }
+
+    date := time.Unix(0, 0).In(time.UTC)
+    date = date.AddDate(0, 0, monthDay-1)
+
+    entry := &entry{
+        id:         uuid.NewV4().String(),
+        checkPoint: time.Unix(0, 0),
+        oneDayLoop: oneDayLoop,
+        checkDay:   date.Day(),
+        duration:   duration,
+        entryFunc:  cmd,
+    }
+    c.entries = append(c.entries, entry)
+    return nil
 }
 
 func (c *Cron) Start() {
@@ -84,6 +117,7 @@ func (c *Cron) workChecker() {
                 job.lock.Unlock()
                 c.ch <- job
             }
+            runtime.Gosched()
         }
     }
 }

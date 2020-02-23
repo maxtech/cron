@@ -20,10 +20,10 @@ func TestNew(t *testing.T) {
     wg.Add(1)
 
     cron := New()
-    cron.AddFunc(time.Second*3, printFunc)
-    // cron.AddFunc(time.Second * 5, panicFunc)
+    cron.AddDayFunc(23, false, time.Second * 3, printFunc)
+    //cron.AddDurationFunc(time.Second * 5, panicFunc)
     cron.Start()
 
-    time.Sleep(time.Second * 20)
+    time.Sleep(time.Minute * 20)
     cron.Stop()
 }
